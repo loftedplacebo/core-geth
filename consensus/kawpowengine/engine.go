@@ -22,6 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/consensus/kawpow"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/params/types/ctypes"
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
@@ -94,7 +95,14 @@ func (e *DevelopmentEngine) Seal(consensus.ChainHeaderReader, *types.Block, chan
 }
 func (e *DevelopmentEngine) SealHash(h *types.Header) common.Hash { return kawpow.SealHash(h) }
 func (e *DevelopmentEngine) CalcDifficulty(c consensus.ChainHeaderReader, t uint64, p *types.Header) *big.Int {
-	return e.structural.CalcDifficulty(c, t, p)
+	return DevelopmentCalcDifficulty(c.Config(), t, p)
+}
+
+// DevelopmentCalcDifficulty deliberately preserves the current Core-Geth
+// difficulty calculation for the disabled engine spike. It is not a selected
+// KawPoW production retarget rule.
+func DevelopmentCalcDifficulty(config ctypes.ChainConfigurator, time uint64, parent *types.Header) *big.Int {
+	return ethash.CalcDifficulty(config, time, parent)
 }
 func (e *DevelopmentEngine) APIs(c consensus.ChainHeaderReader) []rpc.API {
 	return e.structural.APIs(c)

@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/consensus/ethash"
 	"github.com/ethereum/go-ethereum/consensus/kawpow"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/params/types/goethereum"
 )
 
 func TestDevelopmentEngineDisablesMining(t *testing.T) {
@@ -44,5 +45,21 @@ func TestSealHashUsesCandidateMapping(t *testing.T) {
 	h := &types.Header{Number: big.NewInt(1), Difficulty: big.NewInt(2)}
 	if got, want := e.SealHash(h), kawpow.SealHash(h); got != want {
 		t.Fatalf("SealHash = %x, want %x", got, want)
+	}
+}
+
+func TestDevelopmentDifficultyMatchesCoreGethBaseline(t *testing.T) {
+	config := &goethereum.ChainConfig{}
+	parent := &types.Header{
+		Number:     big.NewInt(1),
+		Time:       1_000,
+		Difficulty: big.NewInt(2_000_000),
+	}
+	for _, timestamp := range []uint64{1_001, 1_010, 1_100} {
+		got := DevelopmentCalcDifficulty(config, timestamp, parent)
+		want := ethash.CalcDifficulty(config, timestamp, parent)
+		if got.Cmp(want) != 0 {
+			t.Fatalf("time %d: difficulty = %s, want %s", timestamp, got, want)
+		}
 	}
 }
