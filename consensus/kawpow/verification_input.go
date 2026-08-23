@@ -57,7 +57,7 @@ func HeaderToVerificationInput(header *types.Header) (*VerificationInput, error)
 	}
 	return &VerificationInput{
 		SealHash:  SealHash(header),
-		Nonce:     uint64(header.Nonce),
+		Nonce:     header.Nonce.Uint64(),
 		MixDigest: header.MixDigest,
 		Height:    header.Number.Uint64(),
 		Target:    new(big.Int).Div(new(big.Int).Lsh(big.NewInt(1), 256), header.Difficulty),
