@@ -23,6 +23,8 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -167,12 +169,29 @@ func TestEthashCaches(t *testing.T) {
 
 		entries, _ := os.ReadDir(conf.CacheDir)
 		// We add +1 to CachesOnDisk because the future epoch cache is also created and can still
-		// be in-progress generating as a goroutine.
-		if len(entries) > conf.CachesOnDisk+1 {
+		// be in-progress generating as a goroutine. Ignore its temporary
+		// "<final-name>.<random>" file: on Windows it can coexist with four
+		// completed cache files long enough for this assertion to observe it.
+		finalized := 0
+		for _, entry := range entries {
+			name := entry.Name()
+			if strings.HasPrefix(name, fmt.Sprintf("cache-R%d-", algorithmRevision)) &&
+				(!strings.Contains(name, ".") || strings.HasSuffix(name, ".be")) {
+				finalized++
+			}
+		}
+		maxFinalized := conf.CachesOnDisk + 1
+		if runtime.GOOS == "windows" {
+			// Windows cannot unlink a cache while it remains memory mapped.
+			// The in-memory LRU may therefore keep CachesInMem finalized files
+			// visible alongside the on-disk retention window.
+			maxFinalized = conf.CachesOnDisk + conf.CachesInMem + 1
+		}
+		if finalized > maxFinalized {
 			for _, entry := range entries {
 				t.Logf(`  - %s`, entry.Name())
 			}
-			t.Fatalf("Too many cache files: %d", len(entries))
+			t.Fatalf("Too many finalized cache files: %d (maximum %d)", finalized, maxFinalized)
 		}
 	}
 }
