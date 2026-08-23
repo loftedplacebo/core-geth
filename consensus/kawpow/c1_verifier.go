@@ -28,7 +28,12 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
-const maxC1BlockNumber = uint64(^uint32(0) >> 1)
+// MaxC1BlockNumber is the highest height accepted by the pinned signed 32-bit
+// reference API. Development callers must enforce it before issuing work.
+const MaxC1BlockNumber = uint64(^uint32(0) >> 1)
+
+// Retain the package-local name for existing verifier tests and helpers.
+const maxC1BlockNumber = MaxC1BlockNumber
 
 // C1Seal contains the candidate-specific fields passed to the pinned KawPoW
 // reference verifier. It is deliberately separate from a consensus header.
@@ -46,7 +51,7 @@ func C1Hash(blockNumber int, headerHash [32]byte, nonce uint64) (mixHash, finalH
 	if blockNumber < 0 {
 		return mixHash, finalHash, fmt.Errorf("block number must be non-negative")
 	}
-	if uint64(blockNumber) > maxC1BlockNumber {
+	if uint64(blockNumber) > MaxC1BlockNumber {
 		return mixHash, finalHash, ErrUnsupportedBlockNumber
 	}
 	ok := C.aichain_kawpow_hash(
@@ -68,7 +73,7 @@ func VerifyC1Seal(seal C1Seal) (bool, error) {
 	if seal.BlockNumber < 0 {
 		return false, fmt.Errorf("block number must be non-negative")
 	}
-	if uint64(seal.BlockNumber) > maxC1BlockNumber {
+	if uint64(seal.BlockNumber) > MaxC1BlockNumber {
 		return false, ErrUnsupportedBlockNumber
 	}
 	return C.aichain_kawpow_verify(
@@ -88,7 +93,7 @@ func VerifyHeaderC1Candidate(header *types.Header) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if input.Height > maxC1BlockNumber {
+	if input.Height > MaxC1BlockNumber {
 		return false, ErrUnsupportedBlockNumber
 	}
 	if input.Target.BitLen() > 256 {
