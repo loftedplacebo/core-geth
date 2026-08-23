@@ -13,3 +13,6 @@
 [submodule "consensus/kawpow/cpp-kawpow"]
 	path = consensus/kawpow/cpp-kawpow
 	url = https://github.com/RavenCommunity/cpp-kawpow.git
+[submodule "consensus/firopow/firo"]
+	path = consensus/firopow/firo
+	url = https://github.com/firoorg/firo.git
