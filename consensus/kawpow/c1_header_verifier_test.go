@@ -24,7 +24,7 @@ func candidateHeader() *types.Header {
 	}
 }
 
-func sealedCandidateHeader(t *testing.T) *types.Header {
+func sealedCandidateHeader(t testing.TB) *types.Header {
 	t.Helper()
 	header := candidateHeader()
 	input, err := HeaderToVerificationInput(header)
