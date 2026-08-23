@@ -46,6 +46,9 @@ func C1Hash(blockNumber int, headerHash [32]byte, nonce uint64) (mixHash, finalH
 	if blockNumber < 0 {
 		return mixHash, finalHash, fmt.Errorf("block number must be non-negative")
 	}
+	if uint64(blockNumber) > maxC1BlockNumber {
+		return mixHash, finalHash, ErrUnsupportedBlockNumber
+	}
 	ok := C.aichain_kawpow_hash(
 		C.int(blockNumber),
 		(*C.uint8_t)(unsafe.Pointer(&headerHash[0])),
@@ -64,6 +67,9 @@ func C1Hash(blockNumber int, headerHash [32]byte, nonce uint64) (mixHash, finalH
 func VerifyC1Seal(seal C1Seal) (bool, error) {
 	if seal.BlockNumber < 0 {
 		return false, fmt.Errorf("block number must be non-negative")
+	}
+	if uint64(seal.BlockNumber) > maxC1BlockNumber {
+		return false, ErrUnsupportedBlockNumber
 	}
 	return C.aichain_kawpow_verify(
 		C.int(seal.BlockNumber),

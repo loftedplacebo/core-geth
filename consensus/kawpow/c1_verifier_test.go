@@ -2,6 +2,7 @@ package kawpow
 
 import (
 	"encoding/hex"
+	"strconv"
 	"testing"
 )
 
@@ -35,5 +36,20 @@ func TestC1VerifierPinnedProgPowVectorZero(t *testing.T) {
 	valid, err = VerifyC1Seal(C1Seal{BlockNumber: 0, HeaderHash: header, MixHash: mix, Boundary: final})
 	if err != nil || valid {
 		t.Fatalf("tampered mix: valid=%t err=%v", valid, err)
+	}
+}
+
+func TestC1VerifierRejectsOutOfRangeBlockNumber(t *testing.T) {
+	// On 32-bit Go, the type itself cannot represent a value above the
+	// reference API's signed-32-bit maximum.
+	if strconv.IntSize <= 32 {
+		t.Skip("int cannot represent an out-of-range C1 block number")
+	}
+	outOfRange := int(maxC1BlockNumber + 1)
+	if _, _, err := C1Hash(outOfRange, [32]byte{}, 0); err != ErrUnsupportedBlockNumber {
+		t.Fatalf("hash: have %v want %v", err, ErrUnsupportedBlockNumber)
+	}
+	if _, err := VerifyC1Seal(C1Seal{BlockNumber: outOfRange}); err != ErrUnsupportedBlockNumber {
+		t.Fatalf("verify: have %v want %v", err, ErrUnsupportedBlockNumber)
 	}
 }

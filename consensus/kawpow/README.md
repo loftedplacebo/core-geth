@@ -22,6 +22,8 @@ hardware/DoS measurements, genesis activation point, and migration policy.
 The pinned reference API accepts a signed 32-bit block number. The candidate
 boundary therefore rejects heights above `2,147,483,647`; removing that limit
 requires a reviewed source/API decision before any engine integration.
+The direct native bridge applies the same guard before converting Go's `int`
+to the C API's `int`, so callers cannot bypass it.
 
 Core-Geth's existing `2^256 / difficulty` convention produces a 257-bit target
 at difficulty 1, while the C1 verifier accepts a 256-bit boundary. The boundary
