@@ -2,6 +2,7 @@
 // This file is part of the AIChain Core-Geth fork.
 //go:build cgo
 // +build cgo
+
 //
 // The AIChain Core-Geth fork is free software: you can redistribute it and/or
 // modify it under the terms of the GNU Lesser General Public License as
