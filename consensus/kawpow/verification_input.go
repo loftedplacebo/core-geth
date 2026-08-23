@@ -29,6 +29,10 @@ var (
 	ErrNilHeader = errors.New("nil header")
 	// ErrInvalidDifficulty is returned when the header has no positive difficulty.
 	ErrInvalidDifficulty = errors.New("non-positive difficulty")
+	// ErrDifficultyBelowMinimum is returned when a positive difficulty is below
+	// the agreed C1 candidate floor. It is a candidate-only rule, not an
+	// activated network rule.
+	ErrDifficultyBelowMinimum = errors.New("difficulty below C1 candidate minimum")
 	// ErrTargetOutOfRange is returned when the existing Core-Geth target cannot
 	// be represented by the C1 verifier's 256-bit boundary input.
 	ErrTargetOutOfRange = errors.New("target does not fit the C1 256-bit boundary")
@@ -36,6 +40,8 @@ var (
 	// verifier accepts a signed 32-bit block number.
 	ErrUnsupportedBlockNumber = errors.New("block number exceeds C1 verifier range")
 )
+
+var minimumC1Difficulty = big.NewInt(2)
 
 // VerificationInput is the explicit boundary between a Core-Geth header and
 // the external KawPoW reference verifier evaluated in Phase 2A.
@@ -60,6 +66,9 @@ func HeaderToVerificationInput(header *types.Header) (*VerificationInput, error)
 	}
 	if header.Difficulty == nil || header.Difficulty.Sign() <= 0 {
 		return nil, ErrInvalidDifficulty
+	}
+	if header.Difficulty.Cmp(minimumC1Difficulty) < 0 {
+		return nil, ErrDifficultyBelowMinimum
 	}
 	return &VerificationInput{
 		SealHash:  SealHash(header),

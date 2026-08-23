@@ -76,8 +76,8 @@ func TestVerifyHeaderC1CandidateRejectsUnsupportedInputs(t *testing.T) {
 	}
 	difficultyOne := candidateHeader()
 	difficultyOne.Difficulty = big.NewInt(1)
-	if _, err := VerifyHeaderC1Candidate(difficultyOne); err != ErrTargetOutOfRange {
-		t.Fatalf("difficulty one: have %v want %v", err, ErrTargetOutOfRange)
+	if _, err := VerifyHeaderC1Candidate(difficultyOne); err != ErrDifficultyBelowMinimum {
+		t.Fatalf("difficulty one: have %v want %v", err, ErrDifficultyBelowMinimum)
 	}
 	largeHeight := candidateHeader()
 	largeHeight.Number = new(big.Int).SetUint64(maxC1BlockNumber + 1)
