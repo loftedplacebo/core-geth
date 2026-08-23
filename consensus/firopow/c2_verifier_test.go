@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func mustHash(t *testing.T, value string) [32]byte {
+func mustHash(t testing.TB, value string) [32]byte {
 	t.Helper()
 	var out [32]byte
 	decoded, err := hex.DecodeString(value)
