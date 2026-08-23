@@ -24,7 +24,11 @@ import "C"
 import (
 	"fmt"
 	"unsafe"
+
+	"github.com/ethereum/go-ethereum/core/types"
 )
+
+const maxC1BlockNumber = uint64(^uint32(0) >> 1)
 
 // C1Seal contains the candidate-specific fields passed to the pinned KawPoW
 // reference verifier. It is deliberately separate from a consensus header.
@@ -68,4 +72,31 @@ func VerifyC1Seal(seal C1Seal) (bool, error) {
 		C.uint64_t(seal.Nonce),
 		(*C.uint8_t)(unsafe.Pointer(&seal.Boundary[0])),
 	) != 0, nil
+}
+
+// VerifyHeaderC1Candidate connects the candidate header mapping to the pinned
+// CPU reference verifier. It is intentionally not a consensus.Engine method
+// and is not called by Core-Geth's engine-selection path.
+func VerifyHeaderC1Candidate(header *types.Header) (bool, error) {
+	input, err := HeaderToVerificationInput(header)
+	if err != nil {
+		return false, err
+	}
+	if input.Height > maxC1BlockNumber {
+		return false, ErrUnsupportedBlockNumber
+	}
+	if input.Target.BitLen() > 256 {
+		return false, ErrTargetOutOfRange
+	}
+	var headerHash, mixHash, boundary [32]byte
+	copy(headerHash[:], input.SealHash[:])
+	copy(mixHash[:], input.MixDigest[:])
+	input.Target.FillBytes(boundary[:])
+	return VerifyC1Seal(C1Seal{
+		BlockNumber: int(input.Height),
+		HeaderHash:  headerHash,
+		MixHash:     mixHash,
+		Nonce:       input.Nonce,
+		Boundary:    boundary,
+	})
 }

@@ -29,6 +29,12 @@ var (
 	ErrNilHeader = errors.New("nil header")
 	// ErrInvalidDifficulty is returned when the header has no positive difficulty.
 	ErrInvalidDifficulty = errors.New("non-positive difficulty")
+	// ErrTargetOutOfRange is returned when the existing Core-Geth target cannot
+	// be represented by the C1 verifier's 256-bit boundary input.
+	ErrTargetOutOfRange = errors.New("target does not fit the C1 256-bit boundary")
+	// ErrUnsupportedBlockNumber is returned because the pinned C1 reference
+	// verifier accepts a signed 32-bit block number.
+	ErrUnsupportedBlockNumber = errors.New("block number exceeds C1 verifier range")
 )
 
 // VerificationInput is the explicit boundary between a Core-Geth header and

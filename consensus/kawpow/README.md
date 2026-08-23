@@ -16,3 +16,14 @@ The parent AIChain repository retains the broader C1 experiment, benchmarks, and
 conformance history at `spikes/c1-kawpow-verifier`. Any activation must first
 record the mining-algorithm decision, full consensus rules, test vectors,
 hardware/DoS measurements, genesis activation point, and migration policy.
+
+## Current C1 constraints
+
+The pinned reference API accepts a signed 32-bit block number. The candidate
+boundary therefore rejects heights above `2,147,483,647`; removing that limit
+requires a reviewed source/API decision before any engine integration.
+
+Core-Geth's existing `2^256 / difficulty` convention produces a 257-bit target
+at difficulty 1, while the C1 verifier accepts a 256-bit boundary. The boundary
+rejects that case rather than silently changing the rule. A future protocol
+specification must define the minimum difficulty and exact target encoding.
