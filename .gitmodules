@@ -10,3 +10,6 @@
 	path = tests/testdata-etc
 	url = https://github.com/etclabscore/tests
 	shallow = true
+[submodule "consensus/kawpow/cpp-kawpow"]
+	path = consensus/kawpow/cpp-kawpow
+	url = https://github.com/RavenCommunity/cpp-kawpow.git
