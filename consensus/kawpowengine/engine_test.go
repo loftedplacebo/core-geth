@@ -5,6 +5,7 @@ package kawpowengine
 
 import (
 	"math/big"
+	"sync"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -115,6 +116,51 @@ func TestVerifyHeaderHonoursSealFlag(t *testing.T) {
 	}
 	if err := e.VerifyHeader(nil, tampered, true); err == nil {
 		t.Fatal("seal-enabled header check accepted tampered KawPoW mix")
+	}
+}
+
+func TestVerifyHeadersPreservesResultOrder(t *testing.T) {
+	e := New(ethash.Config{PowMode: ethash.ModeFullFake})
+	valid := sealedEngineHeader(t)
+	tampered := types.CopyHeader(valid)
+	tampered.MixDigest[0]++
+
+	_, results := e.VerifyHeaders(nil, []*types.Header{valid, tampered, valid}, []bool{true, true, true})
+	got := make([]error, 0, 3)
+	for err := range results {
+		got = append(got, err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("received %d results, want 3", len(got))
+	}
+	if got[0] != nil || got[1] == nil || got[2] != nil {
+		t.Fatalf("unexpected ordered results: [%v, %v, %v]", got[0], got[1], got[2])
+	}
+}
+
+func TestVerifySealConcurrent(t *testing.T) {
+	e := New(ethash.Config{})
+	header := sealedEngineHeader(t)
+	const workers = 16
+	const iterations = 4
+
+	var wait sync.WaitGroup
+	errors := make(chan error, workers*iterations)
+	for worker := 0; worker < workers; worker++ {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			for iteration := 0; iteration < iterations; iteration++ {
+				errors <- e.VerifySeal(header)
+			}
+		}()
+	}
+	wait.Wait()
+	close(errors)
+	for err := range errors {
+		if err != nil {
+			t.Fatalf("concurrent valid seal rejected: %v", err)
+		}
 	}
 }
 
