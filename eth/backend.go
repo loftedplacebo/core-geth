@@ -98,8 +98,9 @@ type Ethereum struct {
 	gasPrice  *big.Int
 	etherbase common.Address
 
-	networkID     uint64
-	netRPCService *ethapi.NetAPI
+	networkID       uint64
+	netRPCService   *ethapi.NetAPI
+	developmentAPIs []rpc.API
 
 	p2pServer *p2p.Server
 
@@ -168,7 +169,15 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 		}
 	}
 
-	engine := ethconfig.CreateConsensusEngine(stack, &ethashConfig, cliqueConfig, lyra2Config, config.Miner.Notify, config.Miner.Noverify, chainDb)
+	var engine consensus.Engine
+	if config.KawpowDevelopment {
+		engine, err = newKawpowDevelopmentEngine(ethashConfig)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		engine = ethconfig.CreateConsensusEngine(stack, &ethashConfig, cliqueConfig, lyra2Config, config.Miner.Notify, config.Miner.Noverify, chainDb)
+	}
 
 	chainConfig, err := core.LoadChainConfig(chainDb, config.Genesis)
 	if err != nil {
@@ -301,6 +310,9 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 
 	eth.miner = miner.New(eth, &config.Miner, eth.blockchain.Config(), eth.EventMux(), eth.engine, eth.isLocalBlock)
 	eth.miner.SetExtra(makeExtraData(config.Miner.ExtraData))
+	if err := eth.configureKawpowDevelopment(); err != nil {
+		return nil, err
+	}
 
 	eth.APIBackend = &EthAPIBackend{stack.Config().ExtRPCEnabled(), stack.Config().AllowUnprotectedTxs, eth, nil}
 	if eth.APIBackend.allowUnprotectedTxs {
@@ -361,6 +373,7 @@ func (s *Ethereum) APIs() []rpc.API {
 
 	// Append any APIs exposed explicitly by the consensus engine
 	apis = append(apis, s.engine.APIs(s.BlockChain())...)
+	apis = append(apis, s.developmentAPIs...)
 
 	// Append all the local APIs and return
 	return append(apis, []rpc.API{

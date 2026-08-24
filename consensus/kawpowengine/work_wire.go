@@ -15,6 +15,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/consensus/kawpow"
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
@@ -32,6 +33,7 @@ type DevelopmentWorkResponse struct {
 	HeaderHash string `json:"headerHash"`
 	ParentHash string `json:"parentHash"`
 	Height     string `json:"height"`
+	SeedHash   string `json:"seedHash"`
 	Target     string `json:"target"`
 	ExpiresAt  string `json:"expiresAt"`
 }
@@ -44,12 +46,14 @@ type DevelopmentSubmission struct {
 }
 
 func EncodeDevelopmentWork(work DevelopmentWork) DevelopmentWorkResponse {
+	seedHash := kawpow.SeedHash(work.Height)
 	return DevelopmentWorkResponse{
 		Version:    work.Version,
 		WorkID:     fixedHex(work.ID[:]),
 		HeaderHash: fixedHex(work.HeaderHash[:]),
 		ParentHash: fixedHex(work.ParentHash[:]),
 		Height:     hexutil.EncodeUint64(work.Height),
+		SeedHash:   fixedHex(seedHash[:]),
 		Target:     fixedHex(work.Target[:]),
 		ExpiresAt:  hexutil.EncodeUint64(work.ExpiresAt),
 	}

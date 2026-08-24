@@ -15,6 +15,7 @@ package kawpowengine
 import (
 	"errors"
 	"math/big"
+	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
@@ -26,16 +27,32 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
-var ErrMiningUnavailable = errors.New("KawPoW development engine has no mining implementation")
+var (
+	ErrMiningUnavailable                = errors.New("KawPoW development engine has no mining implementation")
+	ErrInvalidDevelopmentSealingRequest = errors.New("invalid KawPoW development sealing request")
+)
 
-// DevelopmentEngine delegates only non-seal structural checks to Ethash. Its
-// KawPoW seal check is isolated and the engine is not selected by any chain.
-type DevelopmentEngine struct{ structural consensus.Engine }
+// DevelopmentEngine delegates non-seal structural checks to Ethash and uses
+// the isolated KawPoW verifier for seals. It is selected only by explicit G2
+// development mode; normal chain configurations retain their existing engine.
+type DevelopmentEngine struct {
+	structural         consensus.Engine
+	developmentSealing atomic.Bool
+}
 
 var _ consensus.PoW = (*DevelopmentEngine)(nil)
 
 func New(config ethash.Config) *DevelopmentEngine {
 	return &DevelopmentEngine{structural: ethash.New(config, nil, false)}
+}
+
+// NewDevelopment creates the explicitly enabled G2 engine. It still performs
+// no CPU mining: Seal only retains Core-Geth's normal pending-task lifecycle
+// while the local development RPC supplies an externally discovered seal.
+func NewDevelopment(config ethash.Config) *DevelopmentEngine {
+	engine := New(config)
+	engine.developmentSealing.Store(true)
+	return engine
 }
 
 func (e *DevelopmentEngine) Author(h *types.Header) (common.Address, error) {
@@ -90,8 +107,14 @@ func (e *DevelopmentEngine) Finalize(c consensus.ChainHeaderReader, h *types.Hea
 func (e *DevelopmentEngine) FinalizeAndAssemble(c consensus.ChainHeaderReader, h *types.Header, s *state.StateDB, txs []*types.Transaction, u []*types.Header, r []*types.Receipt, w []*types.Withdrawal) (*types.Block, error) {
 	return e.structural.FinalizeAndAssemble(c, h, s, txs, u, r, w)
 }
-func (e *DevelopmentEngine) Seal(consensus.ChainHeaderReader, *types.Block, chan<- *types.Block, <-chan struct{}) error {
-	return ErrMiningUnavailable
+func (e *DevelopmentEngine) Seal(_ consensus.ChainHeaderReader, block *types.Block, results chan<- *types.Block, stop <-chan struct{}) error {
+	if !e.developmentSealing.Load() {
+		return ErrMiningUnavailable
+	}
+	if block == nil || results == nil || stop == nil {
+		return ErrInvalidDevelopmentSealingRequest
+	}
+	return nil
 }
 func (e *DevelopmentEngine) SealHash(h *types.Header) common.Hash { return kawpow.SealHash(h) }
 func (e *DevelopmentEngine) CalcDifficulty(c consensus.ChainHeaderReader, t uint64, p *types.Header) *big.Int {

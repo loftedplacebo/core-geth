@@ -25,6 +25,20 @@ func TestDevelopmentEngineDisablesMining(t *testing.T) {
 	}
 }
 
+func TestExplicitDevelopmentEngineAcceptsExternalSealingTaskOnly(t *testing.T) {
+	e := NewDevelopment(ethash.Config{})
+	if err := e.Seal(nil, nil, nil, nil); err != ErrInvalidDevelopmentSealingRequest {
+		t.Fatalf("nil request error = %v", err)
+	}
+	block := types.NewBlockWithHeader(&types.Header{Number: big.NewInt(1), Difficulty: big.NewInt(2)})
+	if err := e.Seal(nil, block, make(chan *types.Block, 1), make(chan struct{})); err != nil {
+		t.Fatalf("valid development sealing task rejected: %v", err)
+	}
+	if e.Hashrate() != 0 {
+		t.Fatal("external-sealing engine reports an internal hashrate")
+	}
+}
+
 func TestVerifySealRejectsMalformedCandidateInputs(t *testing.T) {
 	e := New(ethash.Config{})
 

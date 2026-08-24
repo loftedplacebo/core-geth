@@ -55,6 +55,7 @@ func (c Config) MarshalTOML() (interface{}, error) {
 		FilterLogCacheSize         int
 		Miner                      miner.Config
 		Ethash                     ethash.Config
+		KawpowDevelopment          bool `toml:",omitempty"`
 		TxPool                     legacypool.Config
 		BlobPool                   blobpool.Config
 		GPO                        gasprice.Config
@@ -111,6 +112,7 @@ func (c Config) MarshalTOML() (interface{}, error) {
 	enc.FilterLogCacheSize = c.FilterLogCacheSize
 	enc.Miner = c.Miner
 	enc.Ethash = c.Ethash
+	enc.KawpowDevelopment = c.KawpowDevelopment
 	enc.TxPool = c.TxPool
 	enc.BlobPool = c.BlobPool
 	enc.GPO = c.GPO
@@ -171,6 +173,7 @@ func (c *Config) UnmarshalTOML(unmarshal func(interface{}) error) error {
 		FilterLogCacheSize         *int
 		Miner                      *miner.Config
 		Ethash                     *ethash.Config
+		KawpowDevelopment          *bool `toml:",omitempty"`
 		TxPool                     *legacypool.Config
 		BlobPool                   *blobpool.Config
 		GPO                        *gasprice.Config
@@ -301,6 +304,9 @@ func (c *Config) UnmarshalTOML(unmarshal func(interface{}) error) error {
 	}
 	if dec.Ethash != nil {
 		c.Ethash = *dec.Ethash
+	}
+	if dec.KawpowDevelopment != nil {
+		c.KawpowDevelopment = *dec.KawpowDevelopment
 	}
 	if dec.TxPool != nil {
 		c.TxPool = *dec.TxPool

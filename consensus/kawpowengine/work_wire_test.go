@@ -29,7 +29,7 @@ func TestDevelopmentWorkWireRoundTrip(t *testing.T) {
 	if wire.Version != DevelopmentWorkVersion || wire.Height != "0x2a" || wire.ExpiresAt != "0x6553f100" {
 		t.Fatalf("unexpected quantity encoding: %#v", wire)
 	}
-	for name, value := range map[string]string{"workId": wire.WorkID, "headerHash": wire.HeaderHash, "parentHash": wire.ParentHash, "target": wire.Target} {
+	for name, value := range map[string]string{"workId": wire.WorkID, "headerHash": wire.HeaderHash, "parentHash": wire.ParentHash, "seedHash": wire.SeedHash, "target": wire.Target} {
 		if len(value) != 66 || value[:2] != "0x" || value != strings.ToLower(value) {
 			t.Fatalf("%s is not canonical fixed hex: %q", name, value)
 		}

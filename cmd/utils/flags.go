@@ -433,6 +433,11 @@ var (
 		Value:    30000,
 		Category: flags.EthashCategory,
 	}
+	KawpowDevelopmentFlag = &cli.BoolFlag{
+		Name:     "aichain.kawpowdev",
+		Usage:    "Enable the isolated AIChain KawPoW G2 engine and local-only development work RPC",
+		Category: flags.EthashCategory,
+	}
 
 	// Transaction pool settings
 	TxPoolLocalsFlag = &cli.StringFlag{
@@ -1953,6 +1958,7 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 	setGPO(ctx, &cfg.GPO)
 	setTxPool(ctx, &cfg.TxPool)
 	setEthash(ctx, cfg)
+	cfg.KawpowDevelopment = ctx.Bool(KawpowDevelopmentFlag.Name)
 	setMiner(ctx, &cfg.Miner)
 	setRequiredBlocks(ctx, cfg)
 	setLes(ctx, cfg)

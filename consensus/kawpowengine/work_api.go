@@ -6,15 +6,34 @@
 package kawpowengine
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
+	"sync"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/rpc"
+	"golang.org/x/time/rate"
 )
 
 const MaxDevelopmentSubmissionBytes = 4 * 1024
+
+const (
+	developmentMaxRateLimitClients = 64
+	developmentGetRate             = 2
+	developmentGetBurst            = 4
+	developmentSubmitRate          = 20
+	developmentSubmitBurst         = 40
+)
+
+var (
+	ErrLocalTransportRequired = errors.New("KawPoW development RPC requires IPC or a loopback transport")
+	ErrDevelopmentRateLimited = errors.New("KawPoW development RPC rate limit exceeded")
+)
 
 type DevelopmentSubmitResponse struct {
 	Accepted  bool   `json:"accepted"`
@@ -29,6 +48,48 @@ type DevelopmentWorkService struct {
 	registry     *WorkRegistry
 	nextTemplate func() (*types.Header, error)
 	accept       func(*types.Header) (common.Hash, error)
+	getLimits    *boundedClientLimiters
+	submitLimits *boundedClientLimiters
+}
+
+type clientLimiter struct {
+	limiter *rate.Limiter
+	touched time.Time
+}
+
+type boundedClientLimiters struct {
+	mu      sync.Mutex
+	limit   rate.Limit
+	burst   int
+	max     int
+	clients map[string]*clientLimiter
+}
+
+func newBoundedClientLimiters(limit rate.Limit, burst, max int) *boundedClientLimiters {
+	return &boundedClientLimiters{limit: limit, burst: burst, max: max, clients: make(map[string]*clientLimiter)}
+}
+
+func (l *boundedClientLimiters) allow(key string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := time.Now()
+	entry := l.clients[key]
+	if entry == nil {
+		if len(l.clients) >= l.max {
+			var oldestKey string
+			var oldest time.Time
+			for candidate, existing := range l.clients {
+				if oldestKey == "" || existing.touched.Before(oldest) {
+					oldestKey, oldest = candidate, existing.touched
+				}
+			}
+			delete(l.clients, oldestKey)
+		}
+		entry = &clientLimiter{limiter: rate.NewLimiter(l.limit, l.burst)}
+		l.clients[key] = entry
+	}
+	entry.touched = now
+	return entry.limiter.Allow()
 }
 
 func NewDevelopmentWorkService(
@@ -39,10 +100,20 @@ func NewDevelopmentWorkService(
 	if registry == nil || nextTemplate == nil || accept == nil {
 		return nil, ErrInvalidWorkConfig
 	}
-	return &DevelopmentWorkService{registry: registry, nextTemplate: nextTemplate, accept: accept}, nil
+	return &DevelopmentWorkService{
+		registry: registry, nextTemplate: nextTemplate, accept: accept,
+		getLimits:    newBoundedClientLimiters(developmentGetRate, developmentGetBurst, developmentMaxRateLimitClients),
+		submitLimits: newBoundedClientLimiters(developmentSubmitRate, developmentSubmitBurst, developmentMaxRateLimitClients),
+	}, nil
 }
 
-func (s *DevelopmentWorkService) GetKawpowWork() (DevelopmentWorkResponse, error) {
+func (s *DevelopmentWorkService) GetKawpowWork(ctx context.Context) (DevelopmentWorkResponse, error) {
+	if err := enforceDevelopmentTransport(ctx); err != nil {
+		return DevelopmentWorkResponse{}, err
+	}
+	if !s.getLimits.allow(developmentClientKey(ctx)) {
+		return DevelopmentWorkResponse{}, ErrDevelopmentRateLimited
+	}
 	header, err := s.nextTemplate()
 	if err != nil {
 		return DevelopmentWorkResponse{}, err
@@ -54,7 +125,13 @@ func (s *DevelopmentWorkService) GetKawpowWork() (DevelopmentWorkResponse, error
 	return EncodeDevelopmentWork(work), nil
 }
 
-func (s *DevelopmentWorkService) SubmitKawpowWork(raw json.RawMessage) (DevelopmentSubmitResponse, error) {
+func (s *DevelopmentWorkService) SubmitKawpowWork(ctx context.Context, raw json.RawMessage) (DevelopmentSubmitResponse, error) {
+	if err := enforceDevelopmentTransport(ctx); err != nil {
+		return DevelopmentSubmitResponse{}, err
+	}
+	if !s.submitLimits.allow(developmentClientKey(ctx)) {
+		return DevelopmentSubmitResponse{}, ErrDevelopmentRateLimited
+	}
 	if len(raw) > MaxDevelopmentSubmissionBytes {
 		return rejected("malformed"), nil
 	}
@@ -81,6 +158,39 @@ func (s *DevelopmentWorkService) SubmitKawpowWork(raw json.RawMessage) (Developm
 		return DevelopmentSubmitResponse{}, fmt.Errorf("accept verified KawPoW development block: %w", err)
 	}
 	return DevelopmentSubmitResponse{Accepted: true, Status: "accepted", BlockHash: fixedHex(blockHash[:])}, nil
+}
+
+func enforceDevelopmentTransport(ctx context.Context) error {
+	if IsDevelopmentTransportAllowed(rpc.PeerInfoFromContext(ctx)) {
+		return nil
+	}
+	return ErrLocalTransportRequired
+}
+
+// IsDevelopmentTransportAllowed keeps the development work API off remote
+// network transports even if an operator accidentally whitelists its namespace.
+func IsDevelopmentTransportAllowed(info rpc.PeerInfo) bool {
+	switch info.Transport {
+	case "", "ipc": // Empty is the trusted in-process transport used by tests and embedding.
+		return true
+	case "http", "ws":
+		host, _, err := net.SplitHostPort(info.RemoteAddr)
+		if err != nil {
+			return false
+		}
+		ip := net.ParseIP(host)
+		return ip != nil && ip.IsLoopback()
+	default:
+		return false
+	}
+}
+
+func developmentClientKey(ctx context.Context) string {
+	info := rpc.PeerInfoFromContext(ctx)
+	if info.Transport == "" {
+		return "inproc"
+	}
+	return info.Transport + "|" + info.RemoteAddr
 }
 
 func rejected(status string) DevelopmentSubmitResponse {

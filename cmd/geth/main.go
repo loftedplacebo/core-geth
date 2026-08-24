@@ -79,6 +79,7 @@ var (
 		utils.EthashDatasetsInMemoryFlag,
 		utils.EthashDatasetsOnDiskFlag,
 		utils.EthashDatasetsLockMmapFlag,
+		utils.KawpowDevelopmentFlag,
 		utils.TxPoolLocalsFlag,
 		utils.TxPoolNoLocalsFlag,
 		utils.TxPoolJournalFlag,

@@ -180,6 +180,10 @@ type Config struct {
 	// Ethash options
 	Ethash ethash.Config
 
+	// KawpowDevelopment enables the isolated AIChain G2 engine and local work
+	// API. It is never inferred from chain configuration and defaults to false.
+	KawpowDevelopment bool `toml:",omitempty"`
+
 	// Transaction pool options
 	TxPool   legacypool.Config
 	BlobPool blobpool.Config

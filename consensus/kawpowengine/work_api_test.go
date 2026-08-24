@@ -4,6 +4,7 @@
 package kawpowengine
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -62,7 +63,7 @@ func TestDevelopmentWorkServiceThroughInMemoryRPC(t *testing.T) {
 func TestDevelopmentWorkServiceRejectionStatuses(t *testing.T) {
 	invalidSeal := errors.New("invalid seal")
 	service, _ := testWorkService(t, func(*types.Header) error { return invalidSeal }, func(h *types.Header) (common.Hash, error) { return h.Hash(), nil })
-	work, err := service.GetKawpowWork()
+	work, err := service.GetKawpowWork(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +81,7 @@ func TestDevelopmentWorkServiceRejectionStatuses(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			got, err := service.SubmitKawpowWork(test.raw)
+			got, err := service.SubmitKawpowWork(context.Background(), test.raw)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -88,6 +89,41 @@ func TestDevelopmentWorkServiceRejectionStatuses(t *testing.T) {
 				t.Fatalf("result = %#v, want status %s", got, test.want)
 			}
 		})
+	}
+}
+
+func TestDevelopmentTransportPolicy(t *testing.T) {
+	tests := []struct {
+		name string
+		info rpc.PeerInfo
+		want bool
+	}{
+		{"in process", rpc.PeerInfo{}, true},
+		{"ipc", rpc.PeerInfo{Transport: "ipc", RemoteAddr: "/tmp/aichain.ipc"}, true},
+		{"loopback http", rpc.PeerInfo{Transport: "http", RemoteAddr: "127.0.0.1:1234"}, true},
+		{"loopback ipv6", rpc.PeerInfo{Transport: "ws", RemoteAddr: "[::1]:1234"}, true},
+		{"remote http", rpc.PeerInfo{Transport: "http", RemoteAddr: "198.51.100.2:1234"}, false},
+		{"malformed address", rpc.PeerInfo{Transport: "http", RemoteAddr: "localhost"}, false},
+		{"unknown transport", rpc.PeerInfo{Transport: "stdio"}, false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := IsDevelopmentTransportAllowed(test.info); got != test.want {
+				t.Fatalf("allowed = %t, want %t", got, test.want)
+			}
+		})
+	}
+}
+
+func TestDevelopmentWorkServiceRateLimits(t *testing.T) {
+	service, _ := testWorkService(t, func(*types.Header) error { return nil }, func(h *types.Header) (common.Hash, error) { return h.Hash(), nil })
+	for i := 0; i < developmentGetBurst; i++ {
+		if _, err := service.GetKawpowWork(context.Background()); err != nil {
+			t.Fatalf("request %d rejected inside burst: %v", i, err)
+		}
+	}
+	if _, err := service.GetKawpowWork(context.Background()); !errors.Is(err, ErrDevelopmentRateLimited) {
+		t.Fatalf("burst overflow error = %v, want %v", err, ErrDevelopmentRateLimited)
 	}
 }
 
