@@ -38,6 +38,7 @@ var (
 type DevelopmentEngine struct {
 	structural         consensus.Engine
 	developmentSealing atomic.Bool
+	latestTemplate     atomic.Pointer[types.Block]
 }
 
 var _ consensus.PoW = (*DevelopmentEngine)(nil)
@@ -114,8 +115,13 @@ func (e *DevelopmentEngine) Seal(_ consensus.ChainHeaderReader, block *types.Blo
 	if block == nil || results == nil || stop == nil {
 		return ErrInvalidDevelopmentSealingRequest
 	}
+	e.latestTemplate.Store(block)
 	return nil
 }
+
+// PendingBlock returns the latest fully finalized block submitted to Seal.
+// The block is immutable; only its copied header receives an external seal.
+func (e *DevelopmentEngine) PendingBlock() *types.Block           { return e.latestTemplate.Load() }
 func (e *DevelopmentEngine) SealHash(h *types.Header) common.Hash { return kawpow.SealHash(h) }
 func (e *DevelopmentEngine) CalcDifficulty(c consensus.ChainHeaderReader, t uint64, p *types.Header) *big.Int {
 	return DevelopmentCalcDifficulty(c.Config(), t, p)

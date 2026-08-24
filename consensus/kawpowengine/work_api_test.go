@@ -127,6 +127,28 @@ func TestDevelopmentWorkServiceRateLimits(t *testing.T) {
 	}
 }
 
+func TestDevelopmentWorkServiceReleasesReservationAfterImportFailure(t *testing.T) {
+	var attempts atomic.Int32
+	service, _ := testWorkService(t, func(*types.Header) error { return nil }, func(h *types.Header) (common.Hash, error) {
+		if attempts.Add(1) == 1 {
+			return common.Hash{}, errors.New("temporary import failure")
+		}
+		return h.Hash(), nil
+	})
+	work, err := service.GetKawpowWork(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := submissionForWork(work, "0x000000000000002a", "0x"+strings.Repeat("ab", 32))
+	if _, err := service.SubmitKawpowWork(context.Background(), raw); err == nil {
+		t.Fatal("first import unexpectedly succeeded")
+	}
+	result, err := service.SubmitKawpowWork(context.Background(), raw)
+	if err != nil || !result.Accepted {
+		t.Fatalf("retry result = %#v, err = %v", result, err)
+	}
+}
+
 func TestDevelopmentWorkServiceDoesNotRegisterItself(t *testing.T) {
 	service, _ := testWorkService(t, func(*types.Header) error { return nil }, func(h *types.Header) (common.Hash, error) { return h.Hash(), nil })
 	if service == nil {

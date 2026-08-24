@@ -31,7 +31,7 @@ type developmentTemplateStore struct {
 		CurrentHeader() *types.Header
 		InsertChain(types.Blocks) (int, error)
 	}
-	miner interface {
+	templates interface {
 		PendingBlock() *types.Block
 	}
 	blocks map[common.Hash]*types.Block
@@ -46,11 +46,19 @@ func (s *Ethereum) configureKawpowDevelopment() error {
 	if !s.config.KawpowDevelopment {
 		return nil
 	}
+	beaconEngine, ok := s.engine.(*beacon.Beacon)
+	if !ok {
+		return errors.New("KawPoW development engine is not beacon-wrapped")
+	}
+	templates, ok := beaconEngine.InnerEngine().(interface{ PendingBlock() *types.Block })
+	if !ok {
+		return errors.New("KawPoW development engine has no finalized template provider")
+	}
 	store := &developmentTemplateStore{
-		engine: s.engine,
-		chain:  s.blockchain,
-		miner:  s.miner,
-		blocks: make(map[common.Hash]*types.Block),
+		engine:    s.engine,
+		chain:     s.blockchain,
+		templates: templates,
+		blocks:    make(map[common.Hash]*types.Block),
 	}
 	registry, err := kawpowengine.NewWorkRegistry(
 		time.Minute,
@@ -76,7 +84,7 @@ func (s *Ethereum) configureKawpowDevelopment() error {
 }
 
 func (s *developmentTemplateStore) nextHeader() (*types.Header, error) {
-	block := s.miner.PendingBlock()
+	block := s.templates.PendingBlock()
 	if block == nil {
 		return nil, errDevelopmentTemplateUnavailable
 	}

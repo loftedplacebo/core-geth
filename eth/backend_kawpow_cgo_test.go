@@ -39,6 +39,7 @@ func newKawpowDevelopmentTestNode(t *testing.T, enabled bool) (*node.Node, *Ethe
 	cfg.SyncMode = downloader.FullSync
 	cfg.Ethash.PowMode = ethash.ModeNormal
 	cfg.KawpowDevelopment = enabled
+	cfg.Miner.Etherbase = common.HexToAddress("0x0000000000000000000000000000000000000001")
 	service, err := New(stack, &cfg)
 	if err != nil {
 		stack.Close()
@@ -47,6 +48,12 @@ func newKawpowDevelopmentTestNode(t *testing.T, enabled bool) (*node.Node, *Ethe
 	if err := stack.Start(); err != nil {
 		stack.Close()
 		t.Fatal(err)
+	}
+	if enabled {
+		if err := service.StartMining(0); err != nil {
+			stack.Close()
+			t.Fatal(err)
+		}
 	}
 	return stack, service
 }

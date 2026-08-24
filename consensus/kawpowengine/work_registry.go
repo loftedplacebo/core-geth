@@ -39,10 +39,11 @@ type DevelopmentWork struct {
 }
 
 type workRecord struct {
-	work     DevelopmentWork
-	header   *types.Header
-	expires  time.Time
-	accepted bool
+	work      DevelopmentWork
+	header    *types.Header
+	expires   time.Time
+	accepting bool
+	accepted  bool
 }
 
 // WorkRegistry owns the bounded development mining-work state machine. It is
@@ -139,7 +140,7 @@ func (r *WorkRegistry) Submit(id common.Hash, nonce types.BlockNonce, mixDigest 
 		r.mu.Unlock()
 		return nil, ErrUnknownWork
 	}
-	if record.accepted {
+	if record.accepted || record.accepting {
 		r.mu.Unlock()
 		return nil, ErrDuplicateWork
 	}
@@ -164,11 +165,31 @@ func (r *WorkRegistry) Submit(id common.Hash, nonce types.BlockNonce, mixDigest 
 		delete(r.records, id)
 		return nil, ErrStaleWork
 	}
-	if record.accepted {
+	if record.accepted || record.accepting {
 		return nil, ErrDuplicateWork
 	}
-	record.accepted = true
+	record.accepting = true
 	return header, nil
+}
+
+// CommitAccepted completes the reservation created by Submit after normal
+// block import succeeds.
+func (r *WorkRegistry) CommitAccepted(id common.Hash) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if record := r.records[id]; record != nil && record.accepting {
+		record.accepting = false
+		record.accepted = true
+	}
+}
+
+// ReleaseAccepted releases a verified reservation when block import fails.
+func (r *WorkRegistry) ReleaseAccepted(id common.Hash) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if record := r.records[id]; record != nil && !record.accepted {
+		record.accepting = false
+	}
 }
 
 func (r *WorkRegistry) pruneLocked(now time.Time) {

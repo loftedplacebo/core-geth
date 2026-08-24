@@ -155,8 +155,10 @@ func (s *DevelopmentWorkService) SubmitKawpowWork(ctx context.Context, raw json.
 	}
 	blockHash, err := s.accept(header)
 	if err != nil {
+		s.registry.ReleaseAccepted(submission.WorkID)
 		return DevelopmentSubmitResponse{}, fmt.Errorf("accept verified KawPoW development block: %w", err)
 	}
+	s.registry.CommitAccepted(submission.WorkID)
 	return DevelopmentSubmitResponse{Accepted: true, Status: "accepted", BlockHash: fixedHex(blockHash[:])}, nil
 }
 
