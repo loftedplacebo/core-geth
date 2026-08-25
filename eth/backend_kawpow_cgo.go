@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/consensus/beacon"
 	"github.com/ethereum/go-ethereum/consensus/ethash"
 	"github.com/ethereum/go-ethereum/consensus/kawpowengine"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rpc"
 )
@@ -30,6 +31,9 @@ type developmentTemplateStore struct {
 	chain  interface {
 		CurrentHeader() *types.Header
 		InsertChain(types.Blocks) (int, error)
+	}
+	events interface {
+		Post(interface{}) error
 	}
 	templates interface {
 		PendingBlock() *types.Block
@@ -57,6 +61,7 @@ func (s *Ethereum) configureKawpowDevelopment() error {
 	store := &developmentTemplateStore{
 		engine:    s.engine,
 		chain:     s.blockchain,
+		events:    s.eventMux,
 		templates: templates,
 		blocks:    make(map[common.Hash]*types.Block),
 	}
@@ -123,6 +128,10 @@ func (s *developmentTemplateStore) acceptHeader(header *types.Header) (common.Ha
 	if _, err := s.chain.InsertChain(types.Blocks{sealed}); err != nil {
 		return common.Hash{}, err
 	}
+	// External sealing bypasses miner.worker.resultLoop, so reproduce its
+	// standard event after canonical insertion. The handler subscribes to this
+	// event and propagates then announces the block to connected peers.
+	_ = s.events.Post(core.NewMinedBlockEvent{Block: sealed})
 	s.mu.Lock()
 	delete(s.blocks, sealHash)
 	s.mu.Unlock()

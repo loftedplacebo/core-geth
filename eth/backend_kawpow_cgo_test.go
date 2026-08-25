@@ -15,8 +15,11 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus/ethash"
 	"github.com/ethereum/go-ethereum/consensus/kawpowengine"
+	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth/downloader"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
+	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/params"
@@ -116,5 +119,58 @@ func TestKawpowDevelopmentAPIUsesRealPendingTemplate(t *testing.T) {
 	}
 	if service.BlockChain().CurrentHeader().Number.Sign() != 0 {
 		t.Fatal("invalid development work changed the canonical chain")
+	}
+}
+
+type developmentChainRecorder struct {
+	current  *types.Header
+	inserted *types.Block
+}
+
+func (r *developmentChainRecorder) CurrentHeader() *types.Header { return r.current }
+func (r *developmentChainRecorder) InsertChain(blocks types.Blocks) (int, error) {
+	r.inserted = blocks[0]
+	r.current = blocks[0].Header()
+	return len(blocks), nil
+}
+
+func TestDevelopmentTemplateStoreEmitsMinedBlockEvent(t *testing.T) {
+	parent := &types.Header{Number: big.NewInt(0)}
+	header := &types.Header{ParentHash: parent.Hash(), Number: big.NewInt(1), Difficulty: big.NewInt(2)}
+	template := types.NewBlockWithHeader(header)
+	engine := kawpowengine.New(ethash.Config{})
+	sealHash := engine.SealHash(header)
+	chain := &developmentChainRecorder{current: parent}
+	events := new(event.TypeMux)
+	store := &developmentTemplateStore{
+		engine: engine, chain: chain, events: events,
+		blocks: map[common.Hash]*types.Block{sealHash: template},
+	}
+	subscription := events.Subscribe(core.NewMinedBlockEvent{})
+	defer subscription.Unsubscribe()
+	type acceptResult struct {
+		hash common.Hash
+		err  error
+	}
+	accepted := make(chan acceptResult, 1)
+	go func() {
+		hash, err := store.acceptHeader(header)
+		accepted <- acceptResult{hash: hash, err: err}
+	}()
+	select {
+	case event := <-subscription.Chan():
+		mined, ok := event.Data.(core.NewMinedBlockEvent)
+		if !ok {
+			t.Fatalf("mined block event = %#v", event.Data)
+		}
+		result := <-accepted
+		if result.err != nil {
+			t.Fatal(result.err)
+		}
+		if chain.inserted == nil || chain.inserted.Hash() != result.hash || mined.Block.Hash() != result.hash {
+			t.Fatalf("inserted block/event mismatch: inserted=%#v event=%s result=%s", chain.inserted, mined.Block.Hash(), result.hash)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("accepted external seal did not emit a mined-block event")
 	}
 }
