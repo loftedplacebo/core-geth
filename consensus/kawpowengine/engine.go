@@ -83,13 +83,26 @@ func (e *DevelopmentEngine) VerifySeal(h *types.Header) error {
 
 func (e *DevelopmentEngine) VerifyHeaders(c consensus.ChainHeaderReader, hs []*types.Header, seals []bool) (chan<- struct{}, <-chan error) {
 	abort, results := make(chan struct{}), make(chan error, len(hs))
+	structuralSeals := make([]bool, len(hs))
+	structuralAbort, structuralResults := e.structural.VerifyHeaders(c, hs, structuralSeals)
 	go func() {
 		defer close(results)
 		for i, h := range hs {
+			var err error
 			select {
 			case <-abort:
+				close(structuralAbort)
 				return
-			case results <- e.VerifyHeader(c, h, i < len(seals) && seals[i]):
+			case err = <-structuralResults:
+			}
+			if err == nil && i < len(seals) && seals[i] {
+				err = e.VerifySeal(h)
+			}
+			select {
+			case <-abort:
+				close(structuralAbort)
+				return
+			case results <- err:
 			}
 		}
 	}()

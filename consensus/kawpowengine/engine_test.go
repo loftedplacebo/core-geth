@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/ethash"
 	"github.com/ethereum/go-ethereum/consensus/kawpow"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -149,6 +150,36 @@ func TestVerifyHeadersPreservesResultOrder(t *testing.T) {
 	}
 	if got[0] != nil || got[1] == nil || got[2] != nil {
 		t.Fatalf("unexpected ordered results: [%v, %v, %v]", got[0], got[1], got[2])
+	}
+}
+
+type structuralBatchRecorder struct {
+	consensus.Engine
+	headers []*types.Header
+}
+
+func (r *structuralBatchRecorder) VerifyHeaders(_ consensus.ChainHeaderReader, headers []*types.Header, _ []bool) (chan<- struct{}, <-chan error) {
+	r.headers = headers
+	abort := make(chan struct{})
+	results := make(chan error, len(headers))
+	for range headers {
+		results <- nil
+	}
+	return abort, results
+}
+
+func TestVerifyHeadersDelegatesContinuousStructuralBatch(t *testing.T) {
+	structural := new(structuralBatchRecorder)
+	e := &DevelopmentEngine{structural: structural}
+	valid := sealedEngineHeader(t)
+	_, results := e.VerifyHeaders(nil, []*types.Header{valid, valid, valid}, []bool{true, true, true})
+	for err := range results {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(structural.headers) != 3 {
+		t.Fatalf("structural engine received %d headers, want the continuous batch of 3", len(structural.headers))
 	}
 }
 
