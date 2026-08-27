@@ -155,11 +155,18 @@ func TestVerifyHeadersPreservesResultOrder(t *testing.T) {
 
 type structuralBatchRecorder struct {
 	consensus.Engine
-	headers []*types.Header
+	headers    []*types.Header
+	calculator ethash.DifficultyCalculator
 }
 
-func (r *structuralBatchRecorder) VerifyHeaders(_ consensus.ChainHeaderReader, headers []*types.Header, _ []bool) (chan<- struct{}, <-chan error) {
+func (r *structuralBatchRecorder) VerifyHeaderWithDifficulty(_ consensus.ChainHeaderReader, _ *types.Header, _ bool, calculator ethash.DifficultyCalculator) error {
+	r.calculator = calculator
+	return nil
+}
+
+func (r *structuralBatchRecorder) VerifyHeadersWithDifficulty(_ consensus.ChainHeaderReader, headers []*types.Header, _ []bool, calculator ethash.DifficultyCalculator) (chan<- struct{}, <-chan error) {
 	r.headers = headers
+	r.calculator = calculator
 	abort := make(chan struct{})
 	results := make(chan error, len(headers))
 	for range headers {
@@ -170,7 +177,7 @@ func (r *structuralBatchRecorder) VerifyHeaders(_ consensus.ChainHeaderReader, h
 
 func TestVerifyHeadersDelegatesContinuousStructuralBatch(t *testing.T) {
 	structural := new(structuralBatchRecorder)
-	e := &DevelopmentEngine{structural: structural}
+	e := &DevelopmentEngine{structural: structural, difficultyVerifier: structural}
 	valid := sealedEngineHeader(t)
 	_, results := e.VerifyHeaders(nil, []*types.Header{valid, valid, valid}, []bool{true, true, true})
 	for err := range results {
@@ -180,6 +187,9 @@ func TestVerifyHeadersDelegatesContinuousStructuralBatch(t *testing.T) {
 	}
 	if len(structural.headers) != 3 {
 		t.Fatalf("structural engine received %d headers, want the continuous batch of 3", len(structural.headers))
+	}
+	if structural.calculator == nil {
+		t.Fatal("structural batch did not receive the development difficulty calculator")
 	}
 }
 

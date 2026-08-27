@@ -42,7 +42,14 @@ type developmentTemplateStore struct {
 	order  []common.Hash
 }
 
-func newKawpowDevelopmentEngine(config ethash.Config) (consensus.Engine, error) {
+func newKawpowDevelopmentEngine(config ethash.Config, asertTarget uint64) (consensus.Engine, error) {
+	if asertTarget != 0 {
+		engine, err := kawpowengine.NewDevelopmentASERT(config, asertTarget)
+		if err != nil {
+			return nil, err
+		}
+		return beacon.New(engine), nil
+	}
 	return beacon.New(kawpowengine.NewDevelopment(config)), nil
 }
 

@@ -27,21 +27,32 @@ import (
 )
 
 func newKawpowDevelopmentTestNode(t *testing.T, enabled bool) (*node.Node, *Ethereum) {
+	return newKawpowDevelopmentTestNodeProfile(t, enabled, 0)
+}
+
+func newKawpowDevelopmentTestNodeProfile(t *testing.T, enabled bool, asertTarget uint64) (*node.Node, *Ethereum) {
 	t.Helper()
 	stack, err := node.New(&node.Config{P2P: p2p.Config{ListenAddr: "127.0.0.1:0", NoDiscovery: true, MaxPeers: 0}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	cfg := ethconfig.Defaults
+	difficulty := big.NewInt(2)
+	genesisAge := time.Second
+	if asertTarget != 0 {
+		difficulty = big.NewInt(327680)
+		genesisAge = time.Duration(asertTarget) * time.Second
+	}
 	cfg.Genesis = &genesisT.Genesis{
 		Config:     params.AllEthashProtocolChanges,
-		Difficulty: big.NewInt(2),
+		Difficulty: difficulty,
 		GasLimit:   30_000_000,
-		Timestamp:  uint64(time.Now().Add(-time.Second).Unix()),
+		Timestamp:  uint64(time.Now().Add(-genesisAge).Unix()),
 	}
 	cfg.SyncMode = downloader.FullSync
 	cfg.Ethash.PowMode = ethash.ModeNormal
 	cfg.KawpowDevelopment = enabled
+	cfg.KawpowDevelopmentASERTTarget = asertTarget
 	cfg.Miner.Etherbase = common.HexToAddress("0x0000000000000000000000000000000000000001")
 	service, err := New(stack, &cfg)
 	if err != nil {
@@ -59,6 +70,43 @@ func newKawpowDevelopmentTestNode(t *testing.T, enabled bool) (*node.Node, *Ethe
 		}
 	}
 	return stack, service
+}
+
+func TestKawpowDevelopmentASERTProfileValidation(t *testing.T) {
+	for _, target := range []uint64{5, 10, 15} {
+		if _, err := newKawpowDevelopmentEngine(ethash.Config{}, target); err != nil {
+			t.Fatalf("target %d rejected: %v", target, err)
+		}
+	}
+	if _, err := newKawpowDevelopmentEngine(ethash.Config{}, 7); err == nil {
+		t.Fatal("unsupported ASERT target accepted")
+	}
+}
+
+func TestKawpowDevelopmentASERTAPIUsesAdjustedTemplate(t *testing.T) {
+	stack, service := newKawpowDevelopmentTestNodeProfile(t, true, 10)
+	defer stack.Close()
+	client := stack.Attach()
+	defer client.Close()
+
+	var work kawpowengine.DevelopmentWorkResponse
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if err := client.Call(&work, "aichain_getKawpowWork"); err == nil {
+			break
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	if work.Height != "0x1" {
+		t.Fatalf("ASERT work height = %q, want 0x1", work.Height)
+	}
+	pending := service.miner.PendingBlock()
+	if pending == nil || pending.Difficulty().Cmp(big.NewInt(2)) <= 0 {
+		t.Fatalf("ASERT pending difficulty was not applied: %v", pending)
+	}
+	if err := service.engine.VerifyHeader(service.BlockChain(), pending.Header(), false); err != nil {
+		t.Fatalf("ASERT pending header failed the node's verifier: %v", err)
+	}
 }
 
 func TestKawpowDevelopmentAPIDisabledByDefault(t *testing.T) {

@@ -1,0 +1,16 @@
+{
+  "SchemaVersion": "0.1.0",
+  "TargetSeconds": 10,
+  "HalfLife": 1800,
+  "AnchorHeight": "0",
+  "AnchorTime": 0,
+  "AnchorTarget": "353369412955676865916659500148583703165496779375123791624321240258523955",
+  "Vectors": [
+    {"Name": "on-schedule", "CandidateHeight": "1", "CandidateTimestamp": 10, "ExpectedTarget": "353369412955676865916659500148583703165496779375123791624321240258523955"},
+    {"Name": "half-life-late", "CandidateHeight": "1", "CandidateTimestamp": 1810, "ExpectedTarget": "706738825911353731833319000297167406330993558750247583248642480517047910"},
+    {"Name": "half-life-early", "CandidateHeight": "181", "CandidateTimestamp": 10, "ExpectedTarget": "176684706477838432958329750074291851582748389687561895812160620129261977"},
+    {"Name": "fractional-late", "CandidateHeight": "1", "CandidateTimestamp": 910, "ExpectedTarget": "499697219486303678466194191234891450609729744442905002822759195247168716"},
+    {"Name": "fractional-early", "CandidateHeight": "91", "CandidateTimestamp": 10, "ExpectedTarget": "249848609743151839233097095617445725304864872221452501411379597623584358"},
+    {"Name": "negative-schedule-error", "CandidateHeight": "100", "CandidateTimestamp": 995, "ExpectedTarget": "352687326304997954729854424666882106509453759621233515140549318919218790"}
+  ]
+}

@@ -438,6 +438,12 @@ var (
 		Usage:    "Enable the isolated AIChain KawPoW G2 engine and local-only development work RPC",
 		Category: flags.EthashCategory,
 	}
+	KawpowDevelopmentASERTTargetFlag = &cli.Uint64Flag{
+		Name:     "aichain.kawpowdev.asert-target",
+		Usage:    "Enable the isolated ASERT v1 profile with a 5, 10, or 15 second target (requires --aichain.kawpowdev)",
+		Value:    0,
+		Category: flags.EthashCategory,
+	}
 
 	// Transaction pool settings
 	TxPoolLocalsFlag = &cli.StringFlag{
@@ -1959,6 +1965,10 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 	setTxPool(ctx, &cfg.TxPool)
 	setEthash(ctx, cfg)
 	cfg.KawpowDevelopment = ctx.Bool(KawpowDevelopmentFlag.Name)
+	cfg.KawpowDevelopmentASERTTarget = ctx.Uint64(KawpowDevelopmentASERTTargetFlag.Name)
+	if cfg.KawpowDevelopmentASERTTarget != 0 && !cfg.KawpowDevelopment {
+		Fatalf("--%s requires --%s", KawpowDevelopmentASERTTargetFlag.Name, KawpowDevelopmentFlag.Name)
+	}
 	setMiner(ctx, &cfg.Miner)
 	setRequiredBlocks(ctx, cfg)
 	setLes(ctx, cfg)

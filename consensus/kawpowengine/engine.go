@@ -30,13 +30,21 @@ import (
 var (
 	ErrMiningUnavailable                = errors.New("KawPoW development engine has no mining implementation")
 	ErrInvalidDevelopmentSealingRequest = errors.New("invalid KawPoW development sealing request")
+	ErrDevelopmentUnclesUnsupported     = errors.New("KawPoW ASERT development profile does not support uncles")
 )
+
+type structuralDifficultyVerifier interface {
+	VerifyHeaderWithDifficulty(consensus.ChainHeaderReader, *types.Header, bool, ethash.DifficultyCalculator) error
+	VerifyHeadersWithDifficulty(consensus.ChainHeaderReader, []*types.Header, []bool, ethash.DifficultyCalculator) (chan<- struct{}, <-chan error)
+}
 
 // DevelopmentEngine delegates non-seal structural checks to Ethash and uses
 // the isolated KawPoW verifier for seals. It is selected only by explicit G2
 // development mode; normal chain configurations retain their existing engine.
 type DevelopmentEngine struct {
 	structural         consensus.Engine
+	difficultyVerifier structuralDifficultyVerifier
+	asert              *DevelopmentASERTConfig
 	developmentSealing atomic.Bool
 	latestTemplate     atomic.Pointer[types.Block]
 }
@@ -44,7 +52,18 @@ type DevelopmentEngine struct {
 var _ consensus.PoW = (*DevelopmentEngine)(nil)
 
 func New(config ethash.Config) *DevelopmentEngine {
-	return &DevelopmentEngine{structural: ethash.New(config, nil, false)}
+	structural := ethash.New(config, nil, false)
+	return &DevelopmentEngine{structural: structural, difficultyVerifier: structural}
+}
+
+func NewDevelopmentASERT(config ethash.Config, targetSeconds uint64) (*DevelopmentEngine, error) {
+	asert, err := NewDevelopmentASERTConfig(targetSeconds)
+	if err != nil {
+		return nil, err
+	}
+	engine := NewDevelopment(config)
+	engine.asert = asert
+	return engine, nil
 }
 
 // NewDevelopment creates the explicitly enabled G2 engine. It still performs
@@ -61,7 +80,7 @@ func (e *DevelopmentEngine) Author(h *types.Header) (common.Address, error) {
 }
 
 func (e *DevelopmentEngine) VerifyHeader(c consensus.ChainHeaderReader, h *types.Header, seal bool) error {
-	if err := e.structural.VerifyHeader(c, h, false); err != nil {
+	if err := e.difficultyVerifier.VerifyHeaderWithDifficulty(c, h, false, e.expectedDifficulty); err != nil {
 		return err
 	}
 	if seal {
@@ -84,7 +103,7 @@ func (e *DevelopmentEngine) VerifySeal(h *types.Header) error {
 func (e *DevelopmentEngine) VerifyHeaders(c consensus.ChainHeaderReader, hs []*types.Header, seals []bool) (chan<- struct{}, <-chan error) {
 	abort, results := make(chan struct{}), make(chan error, len(hs))
 	structuralSeals := make([]bool, len(hs))
-	structuralAbort, structuralResults := e.structural.VerifyHeaders(c, hs, structuralSeals)
+	structuralAbort, structuralResults := e.difficultyVerifier.VerifyHeadersWithDifficulty(c, hs, structuralSeals, e.expectedDifficulty)
 	go func() {
 		defer close(results)
 		for i, h := range hs {
@@ -110,10 +129,22 @@ func (e *DevelopmentEngine) VerifyHeaders(c consensus.ChainHeaderReader, hs []*t
 }
 
 func (e *DevelopmentEngine) VerifyUncles(c consensus.ChainReader, b *types.Block) error {
+	if e.asert != nil && len(b.Uncles()) != 0 {
+		return ErrDevelopmentUnclesUnsupported
+	}
 	return e.structural.VerifyUncles(c, b)
 }
 func (e *DevelopmentEngine) Prepare(c consensus.ChainHeaderReader, h *types.Header) error {
-	return e.structural.Prepare(c, h)
+	parent := c.GetHeader(h.ParentHash, h.Number.Uint64()-1)
+	if parent == nil {
+		return consensus.ErrUnknownAncestor
+	}
+	difficulty, err := e.expectedDifficulty(c, h.Time, parent)
+	if err != nil {
+		return err
+	}
+	h.Difficulty = difficulty
+	return nil
 }
 func (e *DevelopmentEngine) Finalize(c consensus.ChainHeaderReader, h *types.Header, s *state.StateDB, txs []*types.Transaction, u []*types.Header, w []*types.Withdrawal) {
 	e.structural.Finalize(c, h, s, txs, u, w)
@@ -137,7 +168,18 @@ func (e *DevelopmentEngine) Seal(_ consensus.ChainHeaderReader, block *types.Blo
 func (e *DevelopmentEngine) PendingBlock() *types.Block           { return e.latestTemplate.Load() }
 func (e *DevelopmentEngine) SealHash(h *types.Header) common.Hash { return kawpow.SealHash(h) }
 func (e *DevelopmentEngine) CalcDifficulty(c consensus.ChainHeaderReader, t uint64, p *types.Header) *big.Int {
-	return DevelopmentCalcDifficulty(c.Config(), t, p)
+	difficulty, err := e.expectedDifficulty(c, t, p)
+	if err != nil {
+		return new(big.Int).Set(asertMaxUint256)
+	}
+	return difficulty
+}
+
+func (e *DevelopmentEngine) expectedDifficulty(c consensus.ChainHeaderReader, timestamp uint64, parent *types.Header) (*big.Int, error) {
+	if e.asert != nil {
+		return e.asert.Calculate(c, timestamp, parent)
+	}
+	return DevelopmentCalcDifficulty(c.Config(), timestamp, parent), nil
 }
 
 // DevelopmentCalcDifficulty deliberately preserves the current Core-Geth

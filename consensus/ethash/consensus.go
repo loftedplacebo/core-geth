@@ -48,6 +48,15 @@ var (
 	allowedFutureBlockTime = 15 * time.Second // Max time from current time allowed for blocks, before they're considered future blocks
 )
 
+// DifficultyCalculator allows another explicitly selected PoW engine to reuse
+// Ethash's non-seal header validation without inheriting Ethash's difficulty
+// adjustment. The stock Ethash methods always use CalcDifficulty.
+type DifficultyCalculator func(chain consensus.ChainHeaderReader, time uint64, parent *types.Header) (*big.Int, error)
+
+func (ethash *Ethash) defaultDifficultyCalculator(chain consensus.ChainHeaderReader, timestamp uint64, parent *types.Header) (*big.Int, error) {
+	return ethash.CalcDifficulty(chain, timestamp, parent), nil
+}
+
 // Various error messages to mark blocks invalid. These should be private to
 // prevent engine specific errors from being referenced in the remainder of the
 // codebase, inherently breaking if the engine is swapped out. Please put common
@@ -86,13 +95,52 @@ func (ethash *Ethash) VerifyHeader(chain consensus.ChainHeaderReader, header *ty
 		return consensus.ErrUnknownAncestor
 	}
 	// Sanity checks passed, do a proper verification
-	return ethash.verifyHeader(chain, header, parent, false, seal, time.Now().Unix())
+	return ethash.verifyHeader(chain, header, parent, false, seal, time.Now().Unix(), ethash.defaultDifficultyCalculator)
+}
+
+// VerifyHeaderWithDifficulty verifies an Ethash-shaped PoW header using the
+// supplied difficulty calculator. This is only a structural reuse boundary;
+// the caller remains responsible for its own proof-of-work seal.
+func (ethash *Ethash) VerifyHeaderWithDifficulty(chain consensus.ChainHeaderReader, header *types.Header, seal bool, calculate DifficultyCalculator) error {
+	if calculate == nil {
+		return errors.New("nil difficulty calculator")
+	}
+	if ethash.config.PowMode == ModeFullFake {
+		return nil
+	}
+	number := header.Number.Uint64()
+	if chain.GetHeader(header.Hash(), number) != nil {
+		return nil
+	}
+	parent := chain.GetHeader(header.ParentHash, number-1)
+	if parent == nil {
+		return consensus.ErrUnknownAncestor
+	}
+	return ethash.verifyHeader(chain, header, parent, false, seal, time.Now().Unix(), calculate)
 }
 
 // VerifyHeaders is similar to VerifyHeader, but verifies a batch of headers
 // concurrently. The method returns a quit channel to abort the operations and
 // a results channel to retrieve the async verifications.
 func (ethash *Ethash) VerifyHeaders(chain consensus.ChainHeaderReader, headers []*types.Header, seals []bool) (chan<- struct{}, <-chan error) {
+	return ethash.verifyHeadersWithDifficulty(chain, headers, seals, ethash.defaultDifficultyCalculator)
+}
+
+// VerifyHeadersWithDifficulty is the batch equivalent of
+// VerifyHeaderWithDifficulty.
+func (ethash *Ethash) VerifyHeadersWithDifficulty(chain consensus.ChainHeaderReader, headers []*types.Header, seals []bool, calculate DifficultyCalculator) (chan<- struct{}, <-chan error) {
+	if calculate == nil {
+		abort, results := make(chan struct{}), make(chan error, len(headers))
+		for range headers {
+			results <- errors.New("nil difficulty calculator")
+		}
+		close(results)
+		return abort, results
+	}
+	return ethash.verifyHeadersWithDifficulty(chain, headers, seals, calculate)
+}
+
+func (ethash *Ethash) verifyHeadersWithDifficulty(chain consensus.ChainHeaderReader, headers []*types.Header, seals []bool, calculate DifficultyCalculator) (chan<- struct{}, <-chan error) {
 	// If we're running a full engine faking, accept any input as valid
 	if ethash.config.PowMode == ModeFullFake || len(headers) == 0 {
 		abort, results := make(chan struct{}), make(chan error, len(headers))
@@ -119,7 +167,7 @@ func (ethash *Ethash) VerifyHeaders(chain consensus.ChainHeaderReader, headers [
 	for i := 0; i < workers; i++ {
 		go func() {
 			for index := range inputs {
-				errors[index] = ethash.verifyHeaderWorker(chain, headers, seals, index, unixNow)
+				errors[index] = ethash.verifyHeaderWorker(chain, headers, seals, index, unixNow, calculate)
 				done <- index
 			}
 		}()
@@ -155,7 +203,7 @@ func (ethash *Ethash) VerifyHeaders(chain consensus.ChainHeaderReader, headers [
 	return abort, errorsOut
 }
 
-func (ethash *Ethash) verifyHeaderWorker(chain consensus.ChainHeaderReader, headers []*types.Header, seals []bool, index int, unixNow int64) error {
+func (ethash *Ethash) verifyHeaderWorker(chain consensus.ChainHeaderReader, headers []*types.Header, seals []bool, index int, unixNow int64, calculate DifficultyCalculator) error {
 	var parent *types.Header
 	if index == 0 {
 		parent = chain.GetHeader(headers[0].ParentHash, headers[0].Number.Uint64()-1)
@@ -165,7 +213,7 @@ func (ethash *Ethash) verifyHeaderWorker(chain consensus.ChainHeaderReader, head
 	if parent == nil {
 		return consensus.ErrUnknownAncestor
 	}
-	return ethash.verifyHeader(chain, headers[index], parent, false, seals[index], unixNow)
+	return ethash.verifyHeader(chain, headers[index], parent, false, seals[index], unixNow, calculate)
 }
 
 // VerifyUncles verifies that the given block's uncles conform to the consensus
@@ -224,7 +272,7 @@ func (ethash *Ethash) VerifyUncles(chain consensus.ChainReader, block *types.Blo
 		if ancestors[uncle.ParentHash] == nil || uncle.ParentHash == block.ParentHash() {
 			return errDanglingUncle
 		}
-		if err := ethash.verifyHeader(chain, uncle, ancestors[uncle.ParentHash], true, true, time.Now().Unix()); err != nil {
+		if err := ethash.verifyHeader(chain, uncle, ancestors[uncle.ParentHash], true, true, time.Now().Unix(), ethash.defaultDifficultyCalculator); err != nil {
 			return err
 		}
 	}
@@ -234,7 +282,7 @@ func (ethash *Ethash) VerifyUncles(chain consensus.ChainReader, block *types.Blo
 // verifyHeader checks whether a header conforms to the consensus rules of the
 // stock Ethereum ethash engine.
 // See YP section 4.3.4. "Block Header Validity"
-func (ethash *Ethash) verifyHeader(chain consensus.ChainHeaderReader, header, parent *types.Header, uncle bool, seal bool, unixNow int64) error {
+func (ethash *Ethash) verifyHeader(chain consensus.ChainHeaderReader, header, parent *types.Header, uncle bool, seal bool, unixNow int64, calculate DifficultyCalculator) error {
 	// Ensure that the header's extra-data section is of a reasonable size (32)
 	if uint64(len(header.Extra)) > vars.MaximumExtraDataSize {
 		return fmt.Errorf("extra-data too long: %d > %d", len(header.Extra), vars.MaximumExtraDataSize)
@@ -250,7 +298,10 @@ func (ethash *Ethash) verifyHeader(chain consensus.ChainHeaderReader, header, pa
 		return errOlderBlockTime
 	}
 	// Verify the block's difficulty based on its timestamp and parent's difficulty
-	expected := ethash.CalcDifficulty(chain, header.Time, parent)
+	expected, err := calculate(chain, header.Time, parent)
+	if err != nil {
+		return fmt.Errorf("calculate difficulty: %w", err)
+	}
 	if expected.Cmp(header.Difficulty) != 0 {
 		return fmt.Errorf("invalid difficulty: have %v, want %v", header.Difficulty, expected)
 	}

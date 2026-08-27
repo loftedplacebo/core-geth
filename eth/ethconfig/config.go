@@ -183,6 +183,9 @@ type Config struct {
 	// KawpowDevelopment enables the isolated AIChain G2 engine and local work
 	// API. It is never inferred from chain configuration and defaults to false.
 	KawpowDevelopment bool `toml:",omitempty"`
+	// KawpowDevelopmentASERTTarget enables the fixed 30-minute ASERT v1
+	// development profile at a permitted 5, 10, or 15 second target.
+	KawpowDevelopmentASERTTarget uint64 `toml:",omitempty"`
 
 	// Transaction pool options
 	TxPool   legacypool.Config

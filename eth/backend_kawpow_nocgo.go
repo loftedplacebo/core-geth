@@ -14,7 +14,7 @@ import (
 
 var errKawpowDevelopmentRequiresCGO = errors.New("KawPoW development mode requires a CGO-enabled build")
 
-func newKawpowDevelopmentEngine(ethash.Config) (consensus.Engine, error) {
+func newKawpowDevelopmentEngine(ethash.Config, uint64) (consensus.Engine, error) {
 	return nil, errKawpowDevelopmentRequiresCGO
 }
 

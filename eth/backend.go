@@ -171,10 +171,12 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 
 	var engine consensus.Engine
 	if config.KawpowDevelopment {
-		engine, err = newKawpowDevelopmentEngine(ethashConfig)
+		engine, err = newKawpowDevelopmentEngine(ethashConfig, config.KawpowDevelopmentASERTTarget)
 		if err != nil {
 			return nil, err
 		}
+	} else if config.KawpowDevelopmentASERTTarget != 0 {
+		return nil, errors.New("KawPoW ASERT development profile requires KawPoW development mode")
 	} else {
 		engine = ethconfig.CreateConsensusEngine(stack, &ethashConfig, cliqueConfig, lyra2Config, config.Miner.Notify, config.Miner.Noverify, chainDb)
 	}
