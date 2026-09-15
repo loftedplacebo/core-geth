@@ -1,0 +1,29 @@
+name: AIChain KawPoW development boundary
+
+on:
+  push:
+    branches: [new-dag-dev]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  kawpow-development:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.21.13'
+          cache: true
+      - name: Install native build dependencies
+        run: sudo apt-get update && sudo apt-get install --yes build-essential cmake
+      - name: Test KawPoW candidate verifier
+        run: go test ./consensus/kawpow
+      - name: Test development work API
+        run: go test ./consensus/kawpowengine
+      - name: Race-test development work API
+        run: go test -race ./consensus/kawpowengine
