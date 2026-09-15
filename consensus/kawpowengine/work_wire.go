@@ -177,6 +177,14 @@ func fixedHex(value []byte) string {
 	return "0x" + hex.EncodeToString(value)
 }
 
+func decodeCanonicalQuantity(value string) (uint64, error) {
+	decoded, err := hexutil.DecodeUint64(value)
+	if err != nil || hexutil.EncodeUint64(decoded) != value {
+		return 0, fmt.Errorf("%w: quantity must be canonical", ErrMalformedWorkSubmission)
+	}
+	return decoded, nil
+}
+
 func requireJSONEOF(decoder *json.Decoder) error {
 	var extra interface{}
 	if err := decoder.Decode(&extra); err != io.EOF {

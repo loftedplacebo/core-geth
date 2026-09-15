@@ -23,6 +23,12 @@ import (
 const MaxDevelopmentSubmissionBytes = 4 * 1024
 
 const (
+	developmentWorkWatchPoll    = 250 * time.Millisecond
+	developmentWorkWatchDefault = 25 * time.Second
+	developmentWorkWatchMaximum = 30 * time.Second
+)
+
+const (
 	developmentMaxRateLimitClients = 64
 	developmentGetRate             = 2
 	developmentGetBurst            = 4
@@ -39,6 +45,20 @@ type DevelopmentSubmitResponse struct {
 	Accepted  bool   `json:"accepted"`
 	Status    string `json:"status"`
 	BlockHash string `json:"blockHash,omitempty"`
+}
+
+// DevelopmentWorkWatchRequest is a bounded development-only long-poll cursor.
+// The client supplies the complete last observed template cursor, not a block
+// template or consensus value of its own choosing.
+type DevelopmentWorkWatchRequest struct {
+	WorkID         string `json:"workId"`
+	ExpiresAt      string `json:"expiresAt"`
+	TimeoutSeconds uint8  `json:"timeoutSeconds,omitempty"`
+}
+
+type DevelopmentWorkWatchResponse struct {
+	Changed bool                    `json:"changed"`
+	Work    DevelopmentWorkResponse `json:"work"`
 }
 
 // DevelopmentWorkService implements the proposed method behavior without
@@ -114,6 +134,56 @@ func (s *DevelopmentWorkService) GetKawpowWork(ctx context.Context) (Development
 	if !s.getLimits.allow(developmentClientKey(ctx)) {
 		return DevelopmentWorkResponse{}, ErrDevelopmentRateLimited
 	}
+	return s.issueWork()
+}
+
+// WaitForKawpowWork waits for a node-issued template cursor to change. It is
+// intentionally bounded and retains the same local-only transport guard as the
+// rest of the development mining API. It is additive: legacy eth_getWork
+// clients remain supported by the separate local adapter.
+func (s *DevelopmentWorkService) WaitForKawpowWork(ctx context.Context, request DevelopmentWorkWatchRequest) (DevelopmentWorkWatchResponse, error) {
+	if err := enforceDevelopmentTransport(ctx); err != nil {
+		return DevelopmentWorkWatchResponse{}, err
+	}
+	if !s.getLimits.allow(developmentClientKey(ctx)) {
+		return DevelopmentWorkWatchResponse{}, ErrDevelopmentRateLimited
+	}
+	if _, err := decodeFixedHex("workId", request.WorkID, common.HashLength); err != nil {
+		return DevelopmentWorkWatchResponse{}, ErrMalformedWorkSubmission
+	}
+	if _, err := decodeCanonicalQuantity(request.ExpiresAt); err != nil {
+		return DevelopmentWorkWatchResponse{}, ErrMalformedWorkSubmission
+	}
+	timeout := developmentWorkWatchDefault
+	if request.TimeoutSeconds != 0 {
+		timeout = time.Duration(request.TimeoutSeconds) * time.Second
+	}
+	if timeout > developmentWorkWatchMaximum {
+		return DevelopmentWorkWatchResponse{}, ErrMalformedWorkSubmission
+	}
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	ticker := time.NewTicker(developmentWorkWatchPoll)
+	defer ticker.Stop()
+	for {
+		work, err := s.issueWork()
+		if err != nil {
+			return DevelopmentWorkWatchResponse{}, err
+		}
+		if work.WorkID != request.WorkID || work.ExpiresAt != request.ExpiresAt {
+			return DevelopmentWorkWatchResponse{Changed: true, Work: work}, nil
+		}
+		select {
+		case <-ctx.Done():
+			return DevelopmentWorkWatchResponse{Changed: false, Work: work}, nil
+		case <-deadline.C:
+			return DevelopmentWorkWatchResponse{Changed: false, Work: work}, nil
+		case <-ticker.C:
+		}
+	}
+}
+
+func (s *DevelopmentWorkService) issueWork() (DevelopmentWorkResponse, error) {
 	header, err := s.nextTemplate()
 	if err != nil {
 		return DevelopmentWorkResponse{}, err

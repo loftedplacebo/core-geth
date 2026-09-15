@@ -127,6 +127,35 @@ func TestDevelopmentWorkServiceRateLimits(t *testing.T) {
 	}
 }
 
+func TestDevelopmentWorkServiceWaitForWorkCursor(t *testing.T) {
+	service, _ := testWorkService(t, func(*types.Header) error { return nil }, func(h *types.Header) (common.Hash, error) { return h.Hash(), nil })
+	work, err := service.GetKawpowWork(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A different valid cursor returns the node-owned current template without
+	// waiting; callers cannot supply any template or target themselves.
+	changed, err := service.WaitForKawpowWork(context.Background(), DevelopmentWorkWatchRequest{
+		WorkID: "0x" + strings.Repeat("00", 32), ExpiresAt: work.ExpiresAt, TimeoutSeconds: 1,
+	})
+	if err != nil || !changed.Changed || changed.Work.WorkID != work.WorkID {
+		t.Fatalf("changed = %#v, err = %v", changed, err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	unchanged, err := service.WaitForKawpowWork(ctx, DevelopmentWorkWatchRequest{
+		WorkID: work.WorkID, ExpiresAt: work.ExpiresAt, TimeoutSeconds: 1,
+	})
+	if err != nil || unchanged.Changed || unchanged.Work.WorkID != work.WorkID {
+		t.Fatalf("unchanged = %#v, err = %v", unchanged, err)
+	}
+	if _, err := service.WaitForKawpowWork(context.Background(), DevelopmentWorkWatchRequest{
+		WorkID: work.WorkID, ExpiresAt: "0x01", TimeoutSeconds: 1,
+	}); !errors.Is(err, ErrMalformedWorkSubmission) {
+		t.Fatalf("non-canonical cursor error = %v", err)
+	}
+}
+
 func TestDevelopmentWorkServiceReleasesReservationAfterImportFailure(t *testing.T) {
 	var attempts atomic.Int32
 	service, _ := testWorkService(t, func(*types.Header) error { return nil }, func(h *types.Header) (common.Hash, error) {
