@@ -16,6 +16,7 @@ package kawpow
 
 import (
 	"errors"
+	"fmt"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -103,7 +104,7 @@ func SealHash(header *types.Header) (hash common.Hash) {
 		enc = append(enc, header.BaseFee)
 	}
 	if header.WithdrawalsHash != nil || header.ExcessBlobGas != nil || header.BlobGasUsed != nil || header.ParentBeaconRoot != nil {
-		panic("unsupported post-Ethash header field set")
+		panic(fmt.Sprintf("unsupported post-Ethash header field set: withdrawals=%t excessBlobGas=%t blobGasUsed=%t parentBeaconRoot=%t", header.WithdrawalsHash != nil, header.ExcessBlobGas != nil, header.BlobGasUsed != nil, header.ParentBeaconRoot != nil))
 	}
 	rlp.Encode(hasher, enc)
 	hasher.Read(hash[:])
